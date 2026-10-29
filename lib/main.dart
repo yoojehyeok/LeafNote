@@ -43,10 +43,180 @@ class _ReaderState extends State<Reader>{
  Future<void> _render() async {if(doc==null||busy)return;setState(()=>busy=true);try{final p=await doc!.getPage(page);final ratio=p.width/p.height; final image=await p.render(width:p.width*2,height:p.height*2,format:viewer.PdfPageImageFormat.png);await p.close();if(mounted)setState((){pageRatio=ratio;pageImage=image?.bytes;});}finally{if(mounted)setState(()=>busy=false);}}
  Future<void> _save()async{final p=await SharedPreferences.getInstance();await p.setString(key,jsonEncode(strokes.map((k,v)=>MapEntry('$k',v.map((s)=>s.toJson()).toList()))));await p.setInt('page:${widget.path}',page);}
  Future<void> _turn(int delta)async{if(busy||page+delta<1||page+delta>total)return;await _save();setState((){page+=delta;pageImage=null;});await _render();}
- Future<void> _export()async{if(doc==null)return;final output=pw.Document();try{for(int i=1;i<=total;i++){final p=await doc!.getPage(i);final img=await p.render(width:p.width*2,height:p.height*2,format:viewer.PdfPageImageFormat.png);final w=p.width,h=p.height;await p.close();if(img==null)continue;output.addPage(pw.Page(pageFormat:pdf.PdfPageFormat(w,h),margin:pw.EdgeInsets.zero,build:(_)=>pw.Stack(children:[pw.Positioned.fill(child:pw.Image(pw.MemoryImage(img.bytes),fit:pw.BoxFit.fill)),...((strokes[i]??[]).where((s)=>s.points.length>1).map((s)=>pw.CustomPaint(size:pdf.PdfPoint(w,h),painter:(canvas,size){final c=PdfColorCompat(s.color);for(var n=1;n<s.points.length;n++){final a=s.points[n-1],b=s.points[n];canvas.setStrokeColor(c.toPdf());canvas.setLineWidth(s.width*w);canvas.drawLine(a.dx*w,h-a.dy*h,b.dx*w,h-b.dy*h);canvas.strokePath();}}))]));}
- final dir=await getTemporaryDirectory();final path='${dir.path}/LeafNote_${DateTime.now().millisecondsSinceEpoch}.pdf';await File(path).writeAsBytes(await output.save());await Share.shareXFiles([XFile(path)],text:'필기 포함 PDF');}catch(e){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text('내보내기 실패: $e')));}}
+ Future<void> _export() async {
+   if (doc == null) return;
+   final output = pw.Document();
+   try {
+     for (int i = 1; i <= total; i++) {
+       final sourcePage = await doc!.getPage(i);
+       final w = sourcePage.width;
+       final h = sourcePage.height;
+       final image = await sourcePage.render(
+         width: w * 2,
+         height: h * 2,
+         format: viewer.PdfPageImageFormat.png,
+       );
+       await sourcePage.close();
+       if (image == null) continue;
+       final pageStrokes = strokes[i] ?? <InkStroke>[];
+       output.addPage(
+         pw.Page(
+           pageFormat: pdf.PdfPageFormat(w, h),
+           margin: pw.EdgeInsets.zero,
+           build: (context) => pw.Stack(
+             children: [
+               pw.Positioned.fill(
+                 child: pw.Image(
+                   pw.MemoryImage(image.bytes),
+                   fit: pw.BoxFit.fill,
+                 ),
+               ),
+               for (final stroke in pageStrokes)
+                 if (stroke.points.length > 1)
+                   pw.CustomPaint(
+                     size: pdf.PdfPoint(w, h),
+                     painter: (canvas, size) {
+                       canvas.setStrokeColor(PdfColorCompat(stroke.color).toPdf());
+                       canvas.setLineWidth(stroke.width * w);
+                       for (var n = 1; n < stroke.points.length; n++) {
+                         final a = stroke.points[n - 1];
+                         final b = stroke.points[n];
+                         canvas.drawLine(
+                           a.dx * w, h - a.dy * h,
+                           b.dx * w, h - b.dy * h,
+                         );
+                         canvas.strokePath();
+                       }
+                     },
+                   ),
+             ],
+           ),
+         ),
+       );
+     }
+     final dir = await getTemporaryDirectory();
+     final path = '${dir.path}/LeafNote_${DateTime.now().millisecondsSinceEpoch}.pdf';
+     await File(path).writeAsBytes(await output.save());
+     await Share.shareXFiles([XFile(path)], text: '필기 포함 PDF');
+   } catch (e) {
+     if (mounted) {
+       ScaffoldMessenger.of(context).showSnackBar(
+         SnackBar(content: Text('내보내기 실패: $e')),
+       );
+     }
+   }
+ }
  @override void dispose(){_save();doc?.close();super.dispose();}
- @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:Text(widget.path.split('/').last,overflow:TextOverflow.ellipsis),actions:[IconButton(tooltip:'공유',onPressed:_export,icon:const Icon(Icons.ios_share)),IconButton(tooltip:'필기 모드',onPressed:()=>setState(()=>draw=!draw),icon:Icon(draw?Icons.edit:Icons.pan_tool_outlined))]),body:Column(children:[if(draw)Row(mainAxisAlignment:MainAxisAlignment.center,children:[for(final c in [Colors.red,Colors.blue,Colors.black])IconButton(onPressed:()=>setState(()=>ink=c),icon:Icon(Icons.circle,color:c)),TextButton(onPressed:(){final list=strokes[page];if(list!=null&&list.isNotEmpty){setState(()=>list.removeLast());_save();}},child:const Text('되돌리기'))]),Expanded(child:LayoutBuilder(builder:(context,box){if(pageImage==null)return const Center(child:CircularProgressIndicator());return Center(child:AspectRatio(aspectRatio:_ratio(),child:LayoutBuilder(builder:(context,inner)=>Stack(fit:StackFit.expand,children:[Image.memory(pageImage!,fit:BoxFit.fill),GestureDetector(behavior:HitTestBehavior.opaque,onPanStart:draw?(d){setState(()=>current=[_normalize(d.localPosition,inner.biggest)]);}:null,onPanUpdate:draw?(d){setState(()=>current.add(_normalize(d.localPosition,inner.biggest)));}:null,onPanEnd:draw?(_){if(current.isNotEmpty){setState((){strokes.putIfAbsent(page,()=>[]).add(InkStroke(List.of(current),ink.toARGB32(),width));current=[];});_save();}}:null,child:CustomPaint(painter:InkPainter([...?strokes[page],if(current.isNotEmpty)InkStroke(current,ink.toARGB32(),width)])))])));})),Row(mainAxisAlignment:MainAxisAlignment.spaceEvenly,children:[IconButton(onPressed:()=>_turn(-1),icon:const Icon(Icons.chevron_left)),Text('$page / $total'),IconButton(onPressed:()=>_turn(1),icon:const Icon(Icons.chevron_right))]) ]));
+ @override
+ Widget build(BuildContext context) {
+   return Scaffold(
+     appBar: AppBar(
+       title: Text(widget.path.split('/').last, overflow: TextOverflow.ellipsis),
+       actions: [
+         IconButton(
+           tooltip: '공유',
+           onPressed: _export,
+           icon: const Icon(Icons.ios_share),
+         ),
+         IconButton(
+           tooltip: '필기 모드',
+           onPressed: () => setState(() => draw = !draw),
+           icon: Icon(draw ? Icons.edit : Icons.pan_tool_outlined),
+         ),
+       ],
+     ),
+     body: Column(
+       children: [
+         if (draw)
+           Row(
+             mainAxisAlignment: MainAxisAlignment.center,
+             children: [
+               for (final c in [Colors.red, Colors.blue, Colors.black])
+                 IconButton(
+                   onPressed: () => setState(() => ink = c),
+                   icon: Icon(Icons.circle, color: c),
+                 ),
+               TextButton(
+                 onPressed: () {
+                   final list = strokes[page];
+                   if (list != null && list.isNotEmpty) {
+                     setState(() => list.removeLast());
+                     _save();
+                   }
+                 },
+                 child: const Text('되돌리기'),
+               ),
+             ],
+           ),
+         Expanded(
+           child: LayoutBuilder(
+             builder: (context, constraints) {
+               if (pageImage == null) {
+                 return const Center(child: CircularProgressIndicator());
+               }
+               return Center(
+                 child: AspectRatio(
+                   aspectRatio: _ratio(),
+                   child: LayoutBuilder(
+                     builder: (context, inner) {
+                       return Stack(
+                         fit: StackFit.expand,
+                         children: [
+                           Image.memory(pageImage!, fit: BoxFit.fill),
+                           GestureDetector(
+                             behavior: HitTestBehavior.opaque,
+                             onPanStart: draw
+                                 ? (details) => setState(() {
+                                       current = [_normalize(details.localPosition, inner.biggest)];
+                                     })
+                                 : null,
+                             onPanUpdate: draw
+                                 ? (details) => setState(() {
+                                       current.add(_normalize(details.localPosition, inner.biggest));
+                                     })
+                                 : null,
+                             onPanEnd: draw
+                                 ? (details) {
+                                     if (current.isNotEmpty) {
+                                       setState(() {
+                                         strokes.putIfAbsent(page, () => []).add(
+                                           InkStroke(List.of(current), ink.toARGB32(), width),
+                                         );
+                                         current = [];
+                                       });
+                                       _save();
+                                     }
+                                   }
+                                 : null,
+                             child: CustomPaint(
+                               painter: InkPainter([
+                                 ...?strokes[page],
+                                 if (current.isNotEmpty)
+                                   InkStroke(current, ink.toARGB32(), width),
+                               ]),
+                             ),
+                           ),
+                         ],
+                       );
+                     },
+                   ),
+                 ),
+               );
+             },
+           ),
+         ),
+         Row(
+           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+           children: [
+             IconButton(onPressed: () => _turn(-1), icon: const Icon(Icons.chevron_left)),
+             Text('$page / $total'),
+             IconButton(onPressed: () => _turn(1), icon: const Icon(Icons.chevron_right)),
+           ],
+         ),
+       ],
+     ),
+   );
+ }
  double _ratio(){return pageRatio;}
  Offset _normalize(Offset p,Size s){return Offset((p.dx/s.width).clamp(0.0,1.0),(p.dy/s.height).clamp(0.0,1.0));}
 }
