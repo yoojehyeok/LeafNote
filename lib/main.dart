@@ -245,7 +245,7 @@ class InkStroke { InkStroke(this.points,this.color,this.width); final List<Offse
 class Reader extends StatefulWidget {const Reader({super.key,required this.path});final String path;@override State<Reader> createState()=>_ReaderState();}
 class _ReaderState extends State<Reader>{
  viewer.PdfDocument? doc; Uint8List? pageImage; int page=1,total=0; double pageRatio=0.707; bool draw=false,busy=false; Color ink=Colors.red; double width=0.004;
- Map<int,List<InkStroke>> strokes={}; List<Offset> current=[]; Set<int> bookmarks={}; String? loadError; bool exporting=false;
+ Map<int,List<InkStroke>> strokes={}; List<Offset> current=[]; Set<int> bookmarks={}; String? loadError; bool exporting=false; double? scrubPage;
  String get key=>'ink:${widget.path}';
  @override void initState(){super.initState();_open();}
  Future<void> _open() async {try{final d=await viewer.PdfDocument.openFile(widget.path);final p=await SharedPreferences.getInstance(); final raw=p.getString(key); if(raw!=null){final decoded=jsonDecode(raw) as Map<String,dynamic>;strokes=decoded.map((k,v)=>MapEntry(int.parse(k),(v as List).map((s)=>InkStroke.fromJson(Map<String,dynamic>.from(s))).toList()));}doc=d;total=d.pagesCount;bookmarks=(p.getStringList('bookmarks:${widget.path}')??[]).map(int.tryParse).whereType<int>().toSet();page=(p.getInt('page:${widget.path}')??1).clamp(1,total);await _render();}catch(e){if(mounted)setState(()=>loadError='PDF를 열 수 없습니다: $e');}}
@@ -499,13 +499,13 @@ class _ReaderState extends State<Reader>{
            Padding(
              padding: const EdgeInsets.symmetric(horizontal: 18),
              child: Slider(
-               value: page.toDouble().clamp(1.0, total.toDouble()),
+               value: (scrubPage ?? page.toDouble()).clamp(1.0, total.toDouble()),
                min: 1,
                max: total.toDouble(),
                divisions: total > 1000 ? null : total - 1,
                label: '$page / $total',
-               onChanged: busy ? null : (_) {},
-               onChangeEnd: (value) => _goTo(value.round()),
+               onChanged: busy ? null : (value) => setState(() => scrubPage = value),
+               onChangeEnd: (value) { setState(() => scrubPage = null); _goTo(value.round()); },
              ),
            ),       ],
      ),
