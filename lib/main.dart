@@ -14,7 +14,9 @@ void main() { WidgetsFlutterBinding.ensureInitialized(); runApp(const LeafNote()
 class LeafNote extends StatelessWidget {
   const LeafNote({super.key});
   @override Widget build(BuildContext context) => MaterialApp(title: 'LeafNote', debugShowCheckedModeBanner: false,
-    theme: ThemeData(colorSchemeSeed: const Color(0xff387d68), useMaterial3: true), home: const Library());
+    theme: ThemeData(colorSchemeSeed: const Color(0xff387d68), useMaterial3: true),
+    darkTheme: ThemeData(colorSchemeSeed: const Color(0xff387d68), brightness: Brightness.dark, useMaterial3: true),
+    themeMode: ThemeMode.system, home: const Library());
 }
 class Library extends StatefulWidget { const Library({super.key}); @override State<Library> createState()=>_LibraryState(); }
 class _LibraryState extends State<Library> {
@@ -492,7 +494,20 @@ class _ReaderState extends State<Reader>{
              IconButton(tooltip: '다음 페이지', onPressed: page >= total ? null : () => _turn(1), icon: const Icon(Icons.chevron_right)),
            ],
          ),
-       ],
+
+         if (total > 1)
+           Padding(
+             padding: const EdgeInsets.symmetric(horizontal: 18),
+             child: Slider(
+               value: page.toDouble().clamp(1.0, total.toDouble()),
+               min: 1,
+               max: total.toDouble(),
+               divisions: total > 1000 ? null : total - 1,
+               label: '$page / $total',
+               onChanged: busy ? null : (_) {},
+               onChangeEnd: (value) => _goTo(value.round()),
+             ),
+           ),       ],
      ),
    );
  }
