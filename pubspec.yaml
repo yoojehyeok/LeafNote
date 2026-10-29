@@ -1,0 +1,20 @@
+name: leafnote
+description: Offline PDF reading, handwriting and PDF creation.
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  file_picker: ^8.1.7
+  pdfx: ^2.9.2
+  pdf: ^3.11.1
+  path_provider: ^2.1.5
+  shared_preferences: ^2.3.4
+  share_plus: ^10.1.4
+  cross_file: ^0.3.4
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/fonts/NanumGothic.ttf
